@@ -1,0 +1,388 @@
+\documentclass[12pt,a4paper]{article}
+
+% ── Packages ──
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{geometry}
+\geometry{margin=2.5cm}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!60!black,
+    urlcolor=blue!60!black,
+    citecolor=blue!60!black
+}
+
+% ── En-tête / Pied de page ──
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small TP Machine Learning -- SECOM}
+\fancyhead[R]{\small Othmane MAAMAR}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% ══════════════════════════════════════════════════════════════
+%                         PAGE DE GARDE
+% ══════════════════════════════════════════════════════════════
+\begin{document}
+\begin{titlepage}
+    \centering
+    \vspace*{1cm}
+    
+    % ── Logo de l'école ──
+    % INSTRUCTION : Remplacer "logo_ecole.png" par le chemin de votre logo
+    \includegraphics[width=0.35\textwidth]{logo_ecole.png}
+    
+    \vspace{1.5cm}
+    
+    {\Huge\bfseries Travaux Pratiques\\[0.3cm] Machine Learning}
+    
+    \vspace{1cm}
+    
+    {\LARGE Classification Binaire sur le Dataset UCI SECOM}
+    
+    \vspace{0.5cm}
+    
+    {\large Comparaison de 4 modèles de classification\\avec gestion du déséquilibre de classes}
+    
+    \vspace{2cm}
+    
+    {\Large\bfseries Othmane MAAMAR}
+    
+    \vspace{1cm}
+    
+    {\large École Centrale Casablanca}
+    
+    \vspace{0.5cm}
+    
+    {\large Année universitaire 2025--2026}
+    
+    \vfill
+    
+    {\small\today}
+\end{titlepage}
+
+% ══════════════════════════════════════════════════════════════
+%                      TABLE DES MATIÈRES
+% ══════════════════════════════════════════════════════════════
+\tableofcontents
+\newpage
+
+% ══════════════════════════════════════════════════════════════
+%                       1. INTRODUCTION
+% ══════════════════════════════════════════════════════════════
+\section{Introduction}
+
+\subsection{Contexte}
+Dans le cadre du TP de Machine Learning, ce projet porte sur la \textbf{classification binaire} appliquée au dataset UCI SECOM. L'objectif est de détecter les produits défectueux dans un processus de fabrication de semi-conducteurs, à partir de 591 capteurs (features).
+
+\subsection{Problématique}
+Le dataset présente deux défis majeurs :
+\begin{itemize}
+    \item \textbf{Déséquilibre sévère des classes} : seulement $\sim$6.6\% des échantillons sont des défauts (classe 1), soit un ratio d'environ 1:14.
+    \item \textbf{Forte proportion de valeurs manquantes} : 462 features sur 590 contiennent des NaN, dont 24 avec plus de 50\% de données manquantes.
+\end{itemize}
+
+\subsection{Objectifs}
+\begin{enumerate}
+    \item Comparer 4 modèles de classification : Decision Tree, Random Forest, AdaBoost et Neural Network (MLP).
+    \item Gérer le déséquilibre via SMOTE (Synthetic Minority Over-sampling Technique).
+    \item Évaluer les modèles avec des métriques adaptées (Recall, AUC, F1) plutôt que l'accuracy.
+    \item Implémenter deux approches de splitting pour illustrer les bonnes pratiques.
+\end{enumerate}
+
+% ══════════════════════════════════════════════════════════════
+%                    2. DESCRIPTION DES DONNÉES
+% ══════════════════════════════════════════════════════════════
+\section{Description des Données}
+
+\subsection{Le Dataset UCI SECOM}
+\begin{itemize}
+    \item \textbf{Source} : UCI Machine Learning Repository
+    \item \textbf{Échantillons} : 1567 observations
+    \item \textbf{Features} : 590 variables numériques issues de capteurs industriels
+    \item \textbf{Variable cible} : \texttt{Pass/Fail} $\rightarrow$ recodée en 0 (bon) et 1 (défaut)
+    \item \textbf{Colonnes supprimées} : \texttt{Time} et \texttt{Phase} (non informatives)
+\end{itemize}
+
+\subsection{Analyse Exploratoire (EDA)}
+
+\subsubsection{Déséquilibre des Classes}
+% INSTRUCTION : Insérer ici la capture du bar chart de distribution des classes
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{img_eda_distribution.png}
+    \caption{Distribution des classes dans le Train Set et pourcentage de NaN par feature}
+    \label{fig:eda}
+\end{figure}
+
+Le Train Set (70\%) contient :
+\begin{itemize}
+    \item \textbf{Classe 0 (Bon)} : 1023 échantillons (93.3\%)
+    \item \textbf{Classe 1 (Défaut)} : 73 échantillons (6.7\%)
+    \item \textbf{Ratio d'imbalance} : 1:14
+\end{itemize}
+
+Ce déséquilibre rend l'accuracy trompeuse : un classifieur qui prédit toujours ``bon'' obtient 93\% d'accuracy mais ne détecte aucun défaut.
+
+\subsubsection{Valeurs Manquantes}
+Sur 590 features :
+\begin{itemize}
+    \item 462 features contiennent au moins un NaN
+    \item 24 features ont plus de 50\% de valeurs manquantes
+\end{itemize}
+Stratégie retenue : \textbf{imputation par la médiane} (robuste aux outliers).
+
+% ══════════════════════════════════════════════════════════════
+%                      3. MÉTHODOLOGIE
+% ══════════════════════════════════════════════════════════════
+\section{Méthodologie}
+
+\subsection{Split des Données}
+\begin{itemize}
+    \item \textbf{Train} : 70\% (1096 échantillons)
+    \item \textbf{Test} : 30\% (471 échantillons)
+    \item Split \textbf{stratifié} (\texttt{stratify=y}) pour maintenir la proportion de défauts dans les deux sets
+    \item \texttt{random\_state=42} pour la reproductibilité
+\end{itemize}
+
+\subsection{Pipeline de Prétraitement}
+L'ordre des opérations est crucial pour éviter la fuite de données (data leakage) :
+
+\begin{enumerate}
+    \item \textbf{Imputation} : \texttt{SimpleImputer(strategy='median')} -- remplace les NaN par la médiane de chaque feature
+    \item \textbf{Scaling} : \texttt{StandardScaler()} -- normalisation centrée réduite ($\mu=0$, $\sigma=1$)
+    \item \textbf{SMOTE} : sur le Train uniquement -- génère des échantillons synthétiques de la classe minoritaire
+\end{enumerate}
+
+\textbf{Règle fondamentale} : le \texttt{fit} se fait exclusivement sur les données d'entraînement. Le Test Set n'est jamais utilisé pour calibrer les transformations.
+
+\subsection{Les Deux Approches Implémentées}
+
+\subsubsection{Approche A -- ImbPipeline (SplitA.ipynb)}
+Utilise \texttt{imblearn.pipeline.Pipeline} qui encapsule toute la chaîne (Imputation $\rightarrow$ Scaling $\rightarrow$ SMOTE $\rightarrow$ Modèle) dans un seul objet. Lors de la validation croisée, SMOTE est automatiquement ré-appliqué uniquement sur chaque pli d'entraînement.
+
+\textbf{Avantage} : Garantie zéro leakage, code compact.
+
+\subsubsection{Approche B -- Prétraitement Manuel (SplitB.ipynb)}
+Applique chaque étape manuellement : \texttt{fit\_transform} sur le Train, puis \texttt{transform} sur le Test. SMOTE est appliqué une seule fois sur le Train complet avant l'entraînement.
+
+\textbf{Avantage} : Contrôle explicite de chaque étape, plus pédagogique.
+
+\subsection{Les 4 Modèles Comparés}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{@{}llp{7cm}@{}}
+\toprule
+\textbf{Modèle} & \textbf{Type} & \textbf{Hyperparamètres} \\
+\midrule
+Decision Tree & Arbre de décision & \texttt{random\_state=42} (défaut) \\
+Random Forest & Ensemble (Bagging) & \texttt{n\_estimators=100}, \texttt{random\_state=42} \\
+AdaBoost & Ensemble (Boosting) & \texttt{n\_estimators=50}, \texttt{random\_state=42} \\
+Neural Network & MLP & \texttt{hidden\_layers=(100,50)}, \texttt{max\_iter=500} \\
+\bottomrule
+\end{tabular}
+\caption{Configuration des 4 modèles}
+\label{tab:models}
+\end{table}
+
+\subsection{Métriques d'Évaluation}
+Pour un dataset déséquilibré, l'accuracy est inadaptée. Les métriques privilégiées sont :
+
+\begin{itemize}
+    \item \textbf{Recall (Sensibilité)} : $\dfrac{VP}{VP + FN}$ -- proportion de défauts correctement détectés. \textit{Prioritaire en contexte industriel}.
+    \item \textbf{AUC (ROC)} : aire sous la courbe ROC -- mesure la capacité de discrimination globale du modèle (1.0 = parfait, 0.5 = aléatoire).
+    \item \textbf{F1-Score} : $2 \times \dfrac{Precision \times Recall}{Precision + Recall}$ -- moyenne harmonique entre précision et rappel.
+\end{itemize}
+
+\subsection{Critère de Sélection du Meilleur Modèle}
+Un \textbf{score composite} est utilisé :
+$$\text{Score} = 0.4 \times \text{AUC} + 0.3 \times \text{Recall} + 0.3 \times \text{F1}$$
+
+Ce score empêche qu'un modèle avec un bon AUC mais un Recall de 0\% (ne détectant aucun défaut) soit sélectionné comme meilleur modèle. C'est exactement le cas du Random Forest dans ce projet.
+
+% ══════════════════════════════════════════════════════════════
+%                       4. RÉSULTATS
+% ══════════════════════════════════════════════════════════════
+\section{Résultats}
+
+\subsection{Validation Croisée (5-Fold Stratifiée)}
+
+La validation croisée mesure la \textbf{robustesse} de chaque modèle sur 5 plis différents du Train Set.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{Modèle} & \textbf{AUC (CV)} & \textbf{Recall (CV)} & \textbf{F1 (CV)} \\
+\midrule
+Decision Tree  & $0.5361 \pm 0.028$ & $0.1914 \pm 0.049$ & $0.1355 \pm 0.039$ \\
+Random Forest  & $0.6503 \pm 0.073$ & $0.0133 \pm 0.027$ & $0.0235 \pm 0.047$ \\
+AdaBoost       & $0.6049 \pm 0.043$ & $0.2467 \pm 0.054$ & $0.1691 \pm 0.030$ \\
+Neural Network & $0.6288 \pm 0.045$ & $0.0800 \pm 0.065$ & $0.1045 \pm 0.085$ \\
+\bottomrule
+\end{tabular}
+\caption{Résultats de la Validation Croisée (5-Fold)}
+\label{tab:cv}
+\end{table}
+
+\textbf{Observation} : AdaBoost obtient le meilleur Recall en CV (24.67\%), confirmant sa capacité à détecter les défauts malgré le déséquilibre.
+
+\subsection{Évaluation sur le Test Set}
+
+% INSTRUCTION : Insérer ici la capture des courbes ROC
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{img_roc_curves.png}
+    \caption{Courbes ROC -- Comparaison des 4 modèles sur le Test Set}
+    \label{fig:roc}
+\end{figure}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+\textbf{Modèle} & \textbf{AUC} & \textbf{Recall} & \textbf{F1} & \textbf{Score Composite} \\
+\midrule
+Decision Tree  & 0.5788 & 0.2258 & 0.2059 & 0.3610 \\
+Random Forest  & 0.8271 & 0.0000 & 0.0000 & 0.3308 \\
+\textbf{AdaBoost} & \textbf{0.7337} & \textbf{0.2581} & \textbf{0.2192} & \textbf{0.4367} \\
+Neural Network & 0.6625 & 0.1290 & 0.1633 & 0.3527 \\
+\bottomrule
+\end{tabular}
+\caption{Métriques sur le Test Set -- AdaBoost est le meilleur modèle}
+\label{tab:test}
+\end{table}
+
+\textbf{Analyse critique} :
+\begin{itemize}
+    \item \textbf{Random Forest} a le meilleur AUC (0.83) mais un Recall de \textbf{0\%} : au seuil par défaut (0.5), il ne détecte aucun défaut. Son score composite est donc faible (0.33).
+    \item \textbf{AdaBoost} offre le meilleur compromis : AUC correcte (0.73), meilleur Recall (25.8\%) et meilleur F1 (21.9\%). Il est sélectionné comme \textbf{meilleur modèle}.
+\end{itemize}
+
+\subsection{Matrices de Confusion}
+
+% INSTRUCTION : Insérer ici la grille 2x2 des matrices de confusion (seuil par défaut)
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{img_confusion_matrices.png}
+    \caption{Matrices de Confusion pour les 4 modèles (seuil par défaut = 0.5)}
+    \label{fig:cm}
+\end{figure}
+
+On constate que Random Forest classe presque tous les échantillons comme ``Bon'' (439 vrais négatifs, 31 faux négatifs, 0 vrais positifs). Cela illustre parfaitement pourquoi le Recall est une métrique indispensable pour les données déséquilibrées.
+
+\subsection{Optimisation du Seuil de Décision}
+
+Par défaut, le seuil de classification est 0.5. En contexte industriel, il est préférable de \textbf{baisser le seuil} pour augmenter le Recall, au prix de quelques faux positifs supplémentaires.
+
+Objectif : \textbf{Recall $\geq$ 85\%}.
+
+% INSTRUCTION : Insérer ici la grille 2x2 des matrices de confusion optimisées
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{img_confusion_optimized.png}
+    \caption{Matrices de Confusion avec seuil optimisé (objectif Recall $\geq$ 85\%)}
+    \label{fig:cm_opt}
+\end{figure}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{Modèle} & \textbf{Seuil Optimal} & \textbf{Recall Optimisé} & \textbf{F1 Optimisé} \\
+\midrule
+Decision Tree  & 0.0000 & 100.00\% & 0.1235 \\
+\textbf{Random Forest} & \textbf{0.1800} & \textbf{87.10\%} & \textbf{0.2466} \\
+AdaBoost       & 0.4165 & 87.10\% & 0.1922 \\
+Neural Network & 0.0000 & 87.10\% & 0.1388 \\
+\bottomrule
+\end{tabular}
+\caption{Seuils optimisés pour Recall $\geq$ 85\%}
+\label{tab:threshold}
+\end{table}
+
+\textbf{Observation} : Après optimisation du seuil, Random Forest retrouve un excellent Recall (87\%) avec le meilleur F1 optimisé (0.2466). Cela montre que Random Forest a de bonnes probabilités prédites mais que le seuil par défaut de 0.5 est trop élevé pour ce dataset déséquilibré.
+
+% ══════════════════════════════════════════════════════════════
+%                    5. DISCUSSION
+% ══════════════════════════════════════════════════════════════
+\section{Discussion}
+
+\subsection{Pourquoi Random Forest a un bon AUC mais un Recall de 0\% ?}
+L'AUC mesure la qualité du \textit{ranking} des probabilités, pas la qualité des prédictions à un seuil donné. Random Forest assigne des probabilités plus élevées aux vrais défauts, mais aucune ne dépasse 0.5. Baisser le seuil à 0.18 permet de récupérer 87\% de Recall.
+
+Cela illustre une leçon fondamentale : \textbf{l'AUC seul ne suffit pas} pour évaluer un modèle sur données déséquilibrées. Il faut toujours examiner le Recall et envisager une optimisation du seuil.
+
+\subsection{Comparaison des Deux Approches (A vs B)}
+Les deux approches (ImbPipeline vs Prétraitement Manuel) produisent les \textbf{mêmes résultats numériques} sur le Test Set, ce qui est attendu car elles appliquent les mêmes transformations. La différence se situe dans la \textbf{rigueur de la validation croisée} :
+
+\begin{itemize}
+    \item \textbf{Approche A} : SMOTE est ré-appliqué à chaque pli de CV $\rightarrow$ pas de leakage
+    \item \textbf{Approche B} : Les scores de CV sont aussi rigoureux car on utilise un ImbPipeline pour la CV, mais le modèle final est entraîné sur des données SMOTE pré-calculées
+\end{itemize}
+
+\subsection{Limites et Améliorations Possibles}
+\begin{itemize}
+    \item \textbf{Feature Selection} : Avec 590 features et seulement 1567 échantillons, une sélection de variables (PCA, importance des features) pourrait améliorer la généralisation.
+    \item \textbf{Hyperparameter Tuning} : GridSearchCV ou RandomizedSearchCV sur les hyperparamètres de chaque modèle.
+    \item \textbf{Autres techniques de rééchantillonnage} : ADASYN, BorderlineSMOTE, ou sous-échantillonnage de la classe majoritaire.
+    \item \textbf{Modèles supplémentaires} : XGBoost, LightGBM, SVM, ou des architectures de deep learning plus profondes.
+\end{itemize}
+
+% ══════════════════════════════════════════════════════════════
+%                      6. CONCLUSION
+% ══════════════════════════════════════════════════════════════
+\section{Conclusion}
+
+Ce projet a permis de comparer quatre modèles de classification sur le dataset SECOM, en mettant l'accent sur la gestion rigoureuse du déséquilibre de classes.
+
+\textbf{Résultats clés} :
+\begin{itemize}
+    \item \textbf{AdaBoost} est le meilleur modèle au seuil par défaut (Score composite = 0.4367), grâce à son meilleur compromis AUC/Recall/F1.
+    \item \textbf{Random Forest} a le meilleur potentiel (AUC = 0.83) mais nécessite une optimisation du seuil (0.18 au lieu de 0.5) pour détecter les défauts.
+    \item L'utilisation de SMOTE dans un pipeline intégré (ImbPipeline) est la méthode la plus propre pour éviter le data leakage en validation croisée.
+    \item Le Recall est la métrique prioritaire en détection de défauts industriels : mieux vaut quelques faux positifs que des défauts non détectés.
+\end{itemize}
+
+% ══════════════════════════════════════════════════════════════
+%                    INSTRUCTIONS IMAGES
+% ══════════════════════════════════════════════════════════════
+\newpage
+\section*{Instructions pour les images}
+\addcontentsline{toc}{section}{Instructions pour les images}
+
+Les placeholders d'images dans ce rapport doivent être remplacés par des captures d'écran des notebooks. Voici la correspondance :
+
+\begin{table}[H]
+\centering
+\begin{tabular}{@{}lp{9cm}@{}}
+\toprule
+\textbf{Nom du fichier} & \textbf{Contenu attendu} \\
+\midrule
+\texttt{logo\_ecole.png} & Logo de l'École Centrale Casablanca (page de garde) \\
+\texttt{img\_eda\_distribution.png} & Cellule 4 de SplitA.ipynb : bar chart classes + NaN \\
+\texttt{img\_roc\_curves.png} & Cellule 8 de SplitA.ipynb : courbes ROC des 4 modèles \\
+\texttt{img\_confusion\_matrices.png} & Cellule 10 de SplitA.ipynb : grille 2$\times$2 des matrices de confusion \\
+\texttt{img\_confusion\_optimized.png} & Cellule 12 de SplitA.ipynb : grille 2$\times$2 des matrices optimisées \\
+\bottomrule
+\end{tabular}
+\caption*{Correspondance entre placeholders et cellules du notebook}
+\end{table}
+
+Pour exporter les images depuis Jupyter/VS Code : clic droit sur le graphique $\rightarrow$ ``Save Image As...'' ou utiliser \texttt{plt.savefig('nom.png', dpi=150, bbox\_inches='tight')}.
+
+\end{document}
