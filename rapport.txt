@@ -171,15 +171,21 @@ L'ordre des opérations est crucial pour éviter la fuite de données (data leak
 
 \subsection{Les Deux Approches Implémentées}
 
-\subsubsection{Approche A -- ImbPipeline (SplitA.ipynb)}
-Utilise \texttt{imblearn.pipeline.Pipeline} qui encapsule toute la chaîne (Imputation $\rightarrow$ Scaling $\rightarrow$ SMOTE $\rightarrow$ Modèle) dans un seul objet. Lors de la validation croisée, SMOTE est automatiquement ré-appliqué uniquement sur chaque pli d'entraînement.
+L'objectif est de comparer une approche \textbf{correcte} (sans data leakage) et une approche \textbf{incorrecte} (avec data leakage) pour illustrer l'impact de la fuite de données sur les résultats.
 
-\textbf{Avantage} : Garantie zéro leakage, code compact.
+\subsubsection{Approche A -- Split AVANT Preprocessing (SplitA.ipynb)}
+\textbf{Approche correcte.} Le dataset est d'abord séparé en Train/Test, puis l'imputation et le scaling sont \texttt{fit} uniquement sur le Train. Le Test est transformé avec les paramètres du Train. SMOTE est appliqué uniquement au Train.
 
-\subsubsection{Approche B -- Prétraitement Manuel (SplitB.ipynb)}
-Applique chaque étape manuellement : \texttt{fit\_transform} sur le Train, puis \texttt{transform} sur le Test. SMOTE est appliqué une seule fois sur le Train complet avant l'entraînement.
+Utilise \texttt{imblearn.pipeline.Pipeline} (ImbPipeline) qui encapsule toute la chaîne dans un seul objet, garantissant que chaque pli de validation croisée est traité indépendamment.
 
-\textbf{Avantage} : Contrôle explicite de chaque étape, plus pédagogique.
+\textbf{Avantage} : Zéro data leakage, résultats fiables et généralisables.
+
+\subsubsection{Approche B -- Preprocessing AVANT Split (SplitB.ipynb)}
+\textbf{Approche incorrecte (data leakage volontaire).} L'imputation et le scaling sont réalisés sur \textbf{tout} le dataset (Train + Test) \textit{avant} le split. Ainsi, la médiane utilisée pour l'imputation et les paramètres $\mu$/$\sigma$ du StandardScaler sont calculés en incluant les données de test.
+
+Le modèle a donc indirectement ``vu'' le test lors du preprocessing : les statistiques globales (médiane, moyenne, écart-type) sont contaminées par les échantillons du test.
+
+\textbf{Conséquence attendue} : Les résultats peuvent être artificiellement gonflés ou biaisés, car le modèle bénéficie d'informations qu'il ne devrait pas avoir.
 
 \subsection{Les 4 Modèles Comparés}
 
@@ -219,7 +225,9 @@ Ce score empêche qu'un modèle avec un bon AUC mais un Recall de 0\% (ne détec
 % ══════════════════════════════════════════════════════════════
 \section{Résultats}
 
-\subsection{Validation Croisée (5-Fold Stratifiée)}
+\subsection{Approche A -- Sans Data Leakage}
+
+\subsubsection{Validation Croisée (5-Fold Stratifiée)}
 
 La validation croisée mesure la \textbf{robustesse} de chaque modèle sur 5 plis différents du Train Set.
 
@@ -241,7 +249,7 @@ Neural Network & $0.6288 \pm 0.045$ & $0.0800 \pm 0.065$ & $0.1045 \pm 0.085$ \\
 
 \textbf{Observation} : AdaBoost obtient le meilleur Recall en CV (24.67\%), confirmant sa capacité à détecter les défauts malgré le déséquilibre.
 
-\subsection{Évaluation sur le Test Set}
+\subsubsection{Évaluation sur le Test Set}
 
 % INSTRUCTION : Insérer ici la capture des courbes ROC
 \begin{figure}[H]
@@ -273,7 +281,7 @@ Neural Network & 0.6625 & 0.1290 & 0.1633 & 0.3527 \\
     \item \textbf{AdaBoost} offre le meilleur compromis : AUC correcte (0.73), meilleur Recall (25.8\%) et meilleur F1 (21.9\%). Il est sélectionné comme \textbf{meilleur modèle}.
 \end{itemize}
 
-\subsection{Matrices de Confusion}
+\subsubsection{Matrices de Confusion}
 
 % INSTRUCTION : Insérer ici la grille 2x2 des matrices de confusion (seuil par défaut)
 \begin{figure}[H]
@@ -285,7 +293,7 @@ Neural Network & 0.6625 & 0.1290 & 0.1633 & 0.3527 \\
 
 On constate que Random Forest classe presque tous les échantillons comme ``Bon'' (439 vrais négatifs, 31 faux négatifs, 0 vrais positifs). Cela illustre parfaitement pourquoi le Recall est une métrique indispensable pour les données déséquilibrées.
 
-\subsection{Optimisation du Seuil de Décision}
+\subsubsection{Optimisation du Seuil de Décision}
 
 Par défaut, le seuil de classification est 0.5. En contexte industriel, il est préférable de \textbf{baisser le seuil} pour augmenter le Recall, au prix de quelques faux positifs supplémentaires.
 
@@ -317,6 +325,67 @@ Neural Network & 0.0000 & 87.10\% & 0.1388 \\
 
 \textbf{Observation} : Après optimisation du seuil, Random Forest retrouve un excellent Recall (87\%) avec le meilleur F1 optimisé (0.2466). Cela montre que Random Forest a de bonnes probabilités prédites mais que le seuil par défaut de 0.5 est trop élevé pour ce dataset déséquilibré.
 
+\subsection{Approche B -- Avec Data Leakage}
+
+Dans cette approche, l'imputation et le scaling sont réalisés sur \textbf{tout} le dataset \textit{avant} le split. Le data leakage est donc présent dès le départ.
+
+\subsubsection{Résultats sur le Test Set}
+
+% INSTRUCTION : Insérer ici les courbes ROC de SplitB
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{img_roc_curves_B.png}
+    \caption{Courbes ROC -- Approche B (avec Data Leakage)}
+    \label{fig:roc_b}
+\end{figure}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+\textbf{Modèle} & \textbf{AUC} & \textbf{Recall} & \textbf{F1} & \textbf{Score Composite} \\
+\midrule
+Decision Tree  & 0.5997 & 0.2903 & 0.2250 & 0.3944 \\
+Random Forest  & 0.7876 & 0.0000 & 0.0000 & 0.3150 \\
+\textbf{AdaBoost} & \textbf{0.7198} & \textbf{0.3548} & \textbf{0.2651} & \textbf{0.4739} \\
+Neural Network & 0.6617 & 0.1290 & 0.1667 & 0.3534 \\
+\bottomrule
+\end{tabular}
+\caption{Métriques sur le Test Set -- Approche B (Data Leakage)}
+\label{tab:test_b}
+\end{table}
+
+\subsubsection{Matrices de Confusion Optimisées (Approche B)}
+
+% INSTRUCTION : Insérer ici les matrices de confusion optimisées de SplitB
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{img_confusion_optimized_B.png}
+    \caption{Matrices de Confusion optimisées -- Approche B (avec Data Leakage)}
+    \label{fig:cm_opt_b}
+\end{figure}
+
+\subsection{Comparaison Directe A vs B}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{@{}l|cc|cc@{}}
+\toprule
+ & \multicolumn{2}{c|}{\textbf{Approche A (Correcte)}} & \multicolumn{2}{c}{\textbf{Approche B (Leakage)}} \\
+\textbf{Modèle} & \textbf{AUC} & \textbf{Score} & \textbf{AUC} & \textbf{Score} \\
+\midrule
+Decision Tree  & 0.5788 & 0.3610 & 0.5997 & 0.3944 \\
+Random Forest  & 0.8271 & 0.3308 & 0.7876 & 0.3150 \\
+AdaBoost       & 0.7337 & 0.4367 & 0.7198 & 0.4739 \\
+Neural Network & 0.6625 & 0.3527 & 0.6617 & 0.3534 \\
+\bottomrule
+\end{tabular}
+\caption{Comparaison des deux approches -- impact du data leakage}
+\label{tab:comparison}
+\end{table}
+
+\textbf{Analyse} : On observe que les résultats entre les deux approches sont légèrement différents. L'approche B (leakage) montre des scores composites parfois supérieurs (AdaBoost : 0.4739 vs 0.4367) car le modèle bénéficie indirectement des statistiques globales du dataset. Cependant, ces résultats ne sont \textbf{pas fiables} : en production, le modèle rencontrerait des données jamais vues et ses performances réelles seraient inférieures à celles mesurées.
+
 % ══════════════════════════════════════════════════════════════
 %                    5. DISCUSSION
 % ══════════════════════════════════════════════════════════════
@@ -327,13 +396,18 @@ L'AUC mesure la qualité du \textit{ranking} des probabilités, pas la qualité 
 
 Cela illustre une leçon fondamentale : \textbf{l'AUC seul ne suffit pas} pour évaluer un modèle sur données déséquilibrées. Il faut toujours examiner le Recall et envisager une optimisation du seuil.
 
-\subsection{Comparaison des Deux Approches (A vs B)}
-Les deux approches (ImbPipeline vs Prétraitement Manuel) produisent les \textbf{mêmes résultats numériques} sur le Test Set, ce qui est attendu car elles appliquent les mêmes transformations. La différence se situe dans la \textbf{rigueur de la validation croisée} :
+\subsection{Impact du Data Leakage (Approche A vs B)}
+Le data leakage se produit lorsque des informations du test set ``fuient'' dans le processus d'entraînement. Dans l'Approche B, la médiane d'imputation et les paramètres de scaling ($\mu$, $\sigma$) sont calculés sur \textbf{tout} le dataset, incluant le test.
 
+\textbf{Conséquences observées} :
 \begin{itemize}
-    \item \textbf{Approche A} : SMOTE est ré-appliqué à chaque pli de CV $\rightarrow$ pas de leakage
-    \item \textbf{Approche B} : Les scores de CV sont aussi rigoureux car on utilise un ImbPipeline pour la CV, mais le modèle final est entraîné sur des données SMOTE pré-calculées
+    \item Les scores composites de l'Approche B sont légèrement biaisés par rapport à l'Approche A.
+    \item AdaBoost obtient un score composite de 0.4739 (B) contre 0.4367 (A), soit une surestimation de \textbf{+8.5\%}.
+    \item Decision Tree passe de 0.3610 (A) à 0.3944 (B), soit \textbf{+9.3\%} de surestimation.
+    \item Ces différences, bien que modestes sur ce dataset, peuvent être \textbf{beaucoup plus importantes} sur des datasets plus petits ou avec des features plus corrélées.
 \end{itemize}
+
+\textbf{Leçon pédagogique} : Même si la fuite semble ``inoffensive'' (juste des médianes et des moyennes), elle biaise l'évaluation du modèle. En production, les performances réelles seront toujours inférieures à celles mesurées avec leakage. L'Approche A (split avant preprocessing) est la \textbf{seule méthode correcte}.
 
 \subsection{Limites et Améliorations Possibles}
 \begin{itemize}
@@ -352,9 +426,10 @@ Ce projet a permis de comparer quatre modèles de classification sur le dataset 
 
 \textbf{Résultats clés} :
 \begin{itemize}
-    \item \textbf{AdaBoost} est le meilleur modèle au seuil par défaut (Score composite = 0.4367), grâce à son meilleur compromis AUC/Recall/F1.
+    \item \textbf{AdaBoost} est le meilleur modèle au seuil par défaut (Score composite = 0.4367 en Approche A), grâce à son meilleur compromis AUC/Recall/F1.
     \item \textbf{Random Forest} a le meilleur potentiel (AUC = 0.83) mais nécessite une optimisation du seuil (0.18 au lieu de 0.5) pour détecter les défauts.
-    \item L'utilisation de SMOTE dans un pipeline intégré (ImbPipeline) est la méthode la plus propre pour éviter le data leakage en validation croisée.
+    \item \textbf{Le data leakage} (Approche B) surestime les performances de +8 à 9\% : les résultats semblent meilleurs mais ne sont pas fiables en production.
+    \item L'utilisation de SMOTE dans un pipeline intégré (ImbPipeline) avec un split préalable est la \textbf{seule méthode correcte} pour éviter le data leakage.
     \item Le Recall est la métrique prioritaire en détection de défauts industriels : mieux vaut quelques faux positifs que des défauts non détectés.
 \end{itemize}
 
@@ -374,13 +449,21 @@ Les placeholders d'images dans ce rapport doivent être remplacés par des captu
 \textbf{Nom du fichier} & \textbf{Contenu attendu} \\
 \midrule
 \texttt{logo\_ecole.png} & Logo de l'École Centrale Casablanca (page de garde) \\
-\texttt{img\_eda\_distribution.png} & Cellule 4 de SplitA.ipynb : bar chart classes + NaN \\
-\texttt{img\_roc\_curves.png} & Cellule 8 de SplitA.ipynb : courbes ROC des 4 modèles \\
-\texttt{img\_confusion\_matrices.png} & Cellule 10 de SplitA.ipynb : grille 2$\times$2 des matrices de confusion \\
-\texttt{img\_confusion\_optimized.png} & Cellule 12 de SplitA.ipynb : grille 2$\times$2 des matrices optimisées \\
+\midrule
+\multicolumn{2}{c}{\textit{Images de SplitA.ipynb (Approche A -- sans leakage)}} \\
+\midrule
+\texttt{img\_eda\_distribution.png} & Cellule 3 de SplitA.ipynb : bar chart classes + NaN \\
+\texttt{img\_roc\_curves.png} & Cellule 5 de SplitA.ipynb : courbes ROC des 4 modèles \\
+\texttt{img\_confusion\_matrices.png} & Cellule 7 de SplitA.ipynb : grille 2$\times$2 des matrices de confusion \\
+\texttt{img\_confusion\_optimized.png} & Cellule 9 de SplitA.ipynb : grille 2$\times$2 des matrices optimisées \\
+\midrule
+\multicolumn{2}{c}{\textit{Images de SplitB.ipynb (Approche B -- avec leakage)}} \\
+\midrule
+\texttt{img\_roc\_curves\_B.png} & Cellule 7 de SplitB.ipynb : courbes ROC (Approche B) \\
+\texttt{img\_confusion\_optimized\_B.png} & Cellule 11 de SplitB.ipynb : matrices de confusion optimisées (Approche B) \\
 \bottomrule
 \end{tabular}
-\caption*{Correspondance entre placeholders et cellules du notebook}
+\caption*{Correspondance entre placeholders et cellules des notebooks}
 \end{table}
 
 Pour exporter les images depuis Jupyter/VS Code : clic droit sur le graphique $\rightarrow$ ``Save Image As...'' ou utiliser \texttt{plt.savefig('nom.png', dpi=150, bbox\_inches='tight')}.
