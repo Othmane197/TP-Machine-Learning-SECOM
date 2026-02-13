@@ -214,6 +214,15 @@ Pour un dataset déséquilibré, l'accuracy est inadaptée. Les métriques privi
     \item \textbf{F1-Score} : $2 \times \dfrac{Precision \times Recall}{Precision + Recall}$ -- moyenne harmonique entre précision et rappel.
 \end{itemize}
 
+\subsection{Optimisation des Hyperparamètres}
+On utilise \texttt{RandomizedSearchCV} (20 itérations, 5-Fold stratifié, scoring = recall) pour chaque modèle. Cette méthode est préférée à \texttt{GridSearchCV} car avec 590 features, une recherche exhaustive serait prohibitive. Les espaces de recherche incluent :
+
+\begin{itemize}
+    \item \textbf{Decision Tree / Random Forest} : profondeur max, min\_samples\_split, min\_samples\_leaf
+    \item \textbf{AdaBoost} : nombre d'estimateurs, learning rate
+    \item \textbf{Neural Network} : architecture (couches cachées), régularisation ($\alpha$), learning rate
+\end{itemize}
+
 \subsection{Critère de Sélection du Meilleur Modèle}
 Un \textbf{score composite} est utilisé :
 $$\text{Score} = 0.4 \times \text{AUC} + 0.3 \times \text{Recall} + 0.3 \times \text{F1}$$
@@ -325,6 +334,67 @@ Neural Network & 0.0000 & 87.10\% & 0.1388 \\
 
 \textbf{Observation} : Après optimisation du seuil, Random Forest retrouve un excellent Recall (87\%) avec le meilleur F1 optimisé (0.2466). Cela montre que Random Forest a de bonnes probabilités prédites mais que le seuil par défaut de 0.5 est trop élevé pour ce dataset déséquilibré.
 
+\subsubsection{Optimisation des Hyperparamètres}
+
+On applique \texttt{RandomizedSearchCV} (20 itérations, scoring=recall, 5-Fold) pour explorer l'espace des hyperparamètres de chaque modèle.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{@{}lccccl@{}}
+\toprule
+\textbf{Modèle} & \textbf{Recall avant} & \textbf{Recall après} & \textbf{AUC après} & \textbf{F1 après} & \textbf{Paramètres clés} \\
+\midrule
+Decision Tree  & 0.2258 & 0.3226 $\uparrow$ & 0.6761 & 0.2597 & max\_depth=3, leaf=3 \\
+Random Forest  & 0.0000 & 0.1613 $\uparrow$ & 0.7996 & 0.2174 & depth=5, n\_est=200 \\
+\textbf{AdaBoost} & \textbf{0.2581} & \textbf{0.6452} $\uparrow$ & \textbf{0.7232} & \textbf{0.1914} & \textbf{lr=0.04, n\_est=50} \\
+Neural Network & 0.1290 & 0.1613 $\uparrow$ & 0.6652 & 0.1754 & layers=(128,64), $\alpha$=0.01 \\
+\bottomrule
+\end{tabular}
+\caption{Impact de l'optimisation des hyperparamètres sur le Recall}
+\label{tab:tuning}
+\end{table}
+
+\textbf{Résultat majeur} : L'optimisation des hyperparamètres améliore le Recall de \textbf{tous} les modèles. AdaBoost passe de 25.8\% à \textbf{64.5\%} de Recall (+150\%) avec un learning rate plus faible (0.04 vs 1.0 par défaut), ce qui réduit le surapprentissage.
+
+\textbf{Compromis observé} : Le gain en Recall se fait parfois au détriment léger de l'AUC (Random Forest : 0.83 $\rightarrow$ 0.80) ou du F1 (AdaBoost : 0.22 $\rightarrow$ 0.19). C'est un trade-off performance vs robustesse typique en ML.
+
+\subsubsection{Comparaison Avec vs Sans SMOTE}
+
+Pour quantifier l'apport de SMOTE, on entraîne les 4 modèles \textbf{sans rééchantillonnage} (pipeline : Impute $\rightarrow$ Scale $\rightarrow$ Modèle).
+
+% INSTRUCTION : Insérer ici le graphique comparatif SMOTE / Sans SMOTE (barres)
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{img_smote_comparison.png}
+    \caption{Impact de SMOTE sur le Recall et l'AUC}
+    \label{fig:smote}
+\end{figure}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{@{}l|cc|cc@{}}
+\toprule
+ & \multicolumn{2}{c|}{\textbf{Avec SMOTE}} & \multicolumn{2}{c}{\textbf{Sans SMOTE}} \\
+\textbf{Modèle} & \textbf{AUC} & \textbf{Recall} & \textbf{AUC} & \textbf{Recall} \\
+\midrule
+Decision Tree  & 0.5788 & 0.2258 & 0.5468 & 0.1935 \\
+Random Forest  & 0.8271 & 0.0000 & 0.7407 & 0.0000 \\
+AdaBoost       & 0.7337 & \textbf{0.2581} & 0.6767 & 0.0323 \\
+Neural Network & 0.6625 & 0.1290 & 0.6685 & 0.0968 \\
+\bottomrule
+\end{tabular}
+\caption{Avec vs Sans SMOTE -- SMOTE améliore le Recall de +0.29 au total}
+\label{tab:smote}
+\end{table}
+
+\textbf{Analyse} :
+\begin{itemize}
+    \item SMOTE améliore le \textbf{Recall} pour 3 modèles sur 4. L'impact le plus significatif est sur AdaBoost : 25.8\% avec SMOTE vs seulement 3.2\% sans.
+    \item L'\textbf{AUC} est aussi systématiquement améliorée (sauf Neural Network : quasi identique).
+    \item \textbf{Sans SMOTE, les modèles tendent à ignorer la classe minoritaire}, car la fonction de perte est dominée par les 93\% d'échantillons ``bon''.
+    \item SMOTE est donc \textbf{indispensable} pour ce type de dataset déséquilibré.
+\end{itemize}
+
 \subsection{Approche B -- Avec Data Leakage}
 
 Dans cette approche, l'imputation et le scaling sont réalisés sur \textbf{tout} le dataset \textit{avant} le split. Le data leakage est donc présent dès le départ.
@@ -409,12 +479,22 @@ Le data leakage se produit lorsque des informations du test set ``fuient'' dans 
 
 \textbf{Leçon pédagogique} : Même si la fuite semble ``inoffensive'' (juste des médianes et des moyennes), elle biaise l'évaluation du modèle. En production, les performances réelles seront toujours inférieures à celles mesurées avec leakage. L'Approche A (split avant preprocessing) est la \textbf{seule méthode correcte}.
 
+\subsection{Analyse des Compromis (Trade-offs)}
+
+Ce projet met en lumière trois compromis fondamentaux en ML :
+
+\begin{enumerate}
+    \item \textbf{Recall vs Précision} : Augmenter le Recall (via SMOTE, seuil bas) augmente les faux positifs. En industrie, un faux positif (pièce bonne rejetée) coûte moins cher qu'un faux négatif (défaut non détecté).
+    \item \textbf{Performance vs Complexité} : AdaBoost (modèle simple, 50 estimateurs) surpasse le Neural Network (modèle complexe, 2 couches). Sur des datasets petits (1567 échantillons), la parcimonie l'emporte.
+    \item \textbf{Robustesse vs Surapprentissage} : Le tuning améliore le Recall (+150\% pour AdaBoost) mais peut réduire légèrement l'AUC. Le learning rate faible (0.04) rend le modèle plus robuste en ralentissant la convergence.
+\end{enumerate}
+
 \subsection{Limites et Améliorations Possibles}
 \begin{itemize}
-    \item \textbf{Feature Selection} : Avec 590 features et seulement 1567 échantillons, une sélection de variables (PCA, importance des features) pourrait améliorer la généralisation.
-    \item \textbf{Hyperparameter Tuning} : GridSearchCV ou RandomizedSearchCV sur les hyperparamètres de chaque modèle.
-    \item \textbf{Autres techniques de rééchantillonnage} : ADASYN, BorderlineSMOTE, ou sous-échantillonnage de la classe majoritaire.
-    \item \textbf{Modèles supplémentaires} : XGBoost, LightGBM, SVM, ou des architectures de deep learning plus profondes.
+    \item \textbf{Feature Selection} : Avec 590 features et 1567 échantillons ($p \gg n$), une sélection de variables (PCA, importance des features, LASSO) pourrait améliorer la généralisation.
+    \item \textbf{Autres techniques de rééchantillonnage} : ADASYN, BorderlineSMOTE, ou combinaison SMOTE + sous-échantillonnage (SMOTETomek).
+    \item \textbf{Modèles supplémentaires} : XGBoost, LightGBM avec gestion native du déséquilibre via \texttt{scale\_pos\_weight}.
+    \item \textbf{Cost-sensitive learning} : Assigner des poids de classe (\texttt{class\_weight='balanced'}) comme alternative à SMOTE.
 \end{itemize}
 
 % ══════════════════════════════════════════════════════════════
@@ -427,10 +507,11 @@ Ce projet a permis de comparer quatre modèles de classification sur le dataset 
 \textbf{Résultats clés} :
 \begin{itemize}
     \item \textbf{AdaBoost} est le meilleur modèle au seuil par défaut (Score composite = 0.4367 en Approche A), grâce à son meilleur compromis AUC/Recall/F1.
-    \item \textbf{Random Forest} a le meilleur potentiel (AUC = 0.83) mais nécessite une optimisation du seuil (0.18 au lieu de 0.5) pour détecter les défauts.
-    \item \textbf{Le data leakage} (Approche B) surestime les performances de +8 à 9\% : les résultats semblent meilleurs mais ne sont pas fiables en production.
-    \item L'utilisation de SMOTE dans un pipeline intégré (ImbPipeline) avec un split préalable est la \textbf{seule méthode correcte} pour éviter le data leakage.
-    \item Le Recall est la métrique prioritaire en détection de défauts industriels : mieux vaut quelques faux positifs que des défauts non détectés.
+    \item \textbf{L'optimisation des hyperparamètres} améliore le Recall de tous les modèles. AdaBoost optimisé atteint \textbf{64.5\%} de Recall (+150\%) avec un learning rate de 0.04.
+    \item \textbf{SMOTE est indispensable} : sans rééchantillonnage, le Recall total chute de 0.29. AdaBoost passe de 25.8\% (SMOTE) à seulement 3.2\% (sans SMOTE).
+    \item \textbf{Random Forest} a le meilleur AUC (0.83) mais nécessite une optimisation du seuil (0.18 au lieu de 0.5) pour détecter les défauts.
+    \item \textbf{Le data leakage} (Approche B) surestime les performances de +8 à 9\% : les résultats ne sont pas fiables en production.
+    \item Le \textbf{Recall} est la métrique prioritaire en détection de défauts industriels : mieux vaut quelques faux positifs que des défauts non détectés.
 \end{itemize}
 
 % ══════════════════════════════════════════════════════════════
@@ -456,6 +537,7 @@ Les placeholders d'images dans ce rapport doivent être remplacés par des captu
 \texttt{img\_roc\_curves.png} & Cellule 5 de SplitA.ipynb : courbes ROC des 4 modèles \\
 \texttt{img\_confusion\_matrices.png} & Cellule 7 de SplitA.ipynb : grille 2$\times$2 des matrices de confusion \\
 \texttt{img\_confusion\_optimized.png} & Cellule 9 de SplitA.ipynb : grille 2$\times$2 des matrices optimisées \\
+\texttt{img\_smote\_comparison.png} & Cellule 13 de SplitA.ipynb : barres Recall/AUC avec vs sans SMOTE \\
 \midrule
 \multicolumn{2}{c}{\textit{Images de SplitB.ipynb (Approche B -- avec leakage)}} \\
 \midrule
